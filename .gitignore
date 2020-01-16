@@ -1,0 +1,11 @@
+*.asv
+*.bak
+*.deb
+*.log
+*.tmp
+*.cfg
+*.classpath
+*.orig
+*.*~
+be_input/vis
+output/*
