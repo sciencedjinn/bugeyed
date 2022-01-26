@@ -1,5 +1,5 @@
 function f = rootFolder()
-    % ROOTPATH Returns the DigiFly root folder
-    f = fullfile(fileparts(mfilename('fullpath')));
+    % ROOTPATH Returns the bugeyed root folder
+    f = fileparts(mfilename('fullpath'));
 end
 

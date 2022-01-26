@@ -1,11 +1,10 @@
 function makePatches(inGeomName)
 
-vFolder = fullfile(rootFolder, 'be_input', 'voronoi', inGeomName);
-vFileIn = fullfile(vFolder, [inGeomName, 'Voronoi.mat']);
-vFileOut = fullfile(vFolder, [inGeomName, 'VoronoiPatches.mat']);
+vFile = bugeyed_fileName(inGeomName, 'voronoi');
+pFile = bugeyed_fileName(inGeomName, 'patches');
 
 %% load Voronoi and convert to a quick-to-plot format
-load(vFileIn, 'outVOR');
+load(vFile, 'outVOR');
 
 polSize = cellfun(@(x) size(x, 1), outVOR); % number of vertices for each polygon
 for np = min(polSize):max(polSize)
@@ -17,4 +16,4 @@ for np = min(polSize):max(polSize)
     Id{np} = theseVerts;
 end
 
-save(vFileOut, 'Fx', 'Fy', 'Id')
+save(pFile, 'Fx', 'Fy', 'Id')

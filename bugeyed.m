@@ -1,15 +1,17 @@
 function bugeyed(inGeomName, inVisName, inPara)
-    % BUGEYED 1.0 filters a video to simulate arthropod vision.
+    % BUGEYED 1.01 filters a video or single image to simulate arthropod vision.
     % Data of the eye geometry have to be given in geometrical input files in asciiformat in be_input\Geom, delimited by commas.
     % Visual input has to be stored as image sequences in be_input\vis.
     % For further information see default definitons below.
     %
     % Example:
     % bugeyed('Crab', 'Bird_0')
+    %
+    %    inGeomName - can be a full path (at least two directories deep) or a pre-defined geometry name (must be found in be_input/geom)
+    %    inVisName  - can be a full path (at least two directories deep) or a pre-defined stimulus name (must be found in be_input/vis)
 
-    addpath('methods')
-    addpath('methods\general')
-    addpath('methods\voronoi')
+
+    bugeyed_paths;
 
     %% defaults
     if nargin<1 || isempty(inGeomName), inGeomName = sub_getInputName('geom'); end % ask user
@@ -20,18 +22,22 @@ function bugeyed(inGeomName, inVisName, inPara)
         inPara.frameRate = 25;                    % image sequence (and output video) frame Rate (Hz)
         inPara.imFormat = '.jpg';                 % file format of visual input files
         inPara.saveDir = fullfile(fileparts(mfilename('fullpath')), 'output'); % output files will be saved in a sub-directory of this
+        inPara.outImageFormat = '.jpg';           % file format of output images
+        inPara.outVideoFormat = '.avi';           % file format of output videos
         inPara.phi2rho = 1;                       % assumed ratio between inter-ommatidial angle (IOA = phi) and receptor acceptance angle (AA = rho).
                                                   % Influences acceptance angles ONLY if calculated from inter-ommatidial angles.
         inPara.waveLength = 450;                  % assumed wavelength of processed light. Influences acceptance angles ONLY if calculated from facet diameter.
         inPara.bufferSize = 100;                  % number of images to buffer before filtering. Larger number excutes faster, but requires more RAM.
         inPara.filterCutOff = 3;                  % filter kernels will be cut off after 'filterCutOff' standard deviations (default 3 to include 99.7% of data)
         inPara.verbose = true;                    % toggle the display of waitbars during loading
-        inPara.normalisation = 255;               % normalise the output video to this maximum (255 for normal jpgs)
+        inPara.normalisation = 2^16-1;               % normalise the output video to this maximum (255 for normal jpgs)
                                                   % use a higher value to decrease output brightness (currently only works for rgb inputs)
+        inPara.forceRecalc = false;
+        inPara.maxVoronoiDist = 180;
     end
 
     %% load eye data
-    fprintf('\nCalculating input video ''%s'' as seen by eye geometry ''%s''\n\n', inVisName, inGeomName);
+    fprintf('\nCalculating input image/video ''%s'' as seen by eye geometry ''%s''\n\n', inVisName, inGeomName);
 
     fprintf('* Loading eye geometry...\n');
     geom = sub_loadGeom(inGeomName, inPara); % load optical axes and acceptance angles
@@ -67,28 +73,39 @@ function bugeyed(inGeomName, inVisName, inPara)
     %% plot and save
 
     % Prepare figure
-    figure(1); clf; h = axes; maxfig;
+    figure(4); clf; h = axes; maxfig;
     axis(h, 'equal');
     axis(h, inPara.visualField);
     if size(FilteredVisData, 2) == 1
         colormap gray;
     end
 
-    % Write to output video
     if ~exist(inPara.saveDir, 'file')
         mkdir(inPara.saveDir);
     end
-    saveName = fullfile(inPara.saveDir, [inGeomName, 'View', inVisName, '.avi']);
-    v = VideoWriter(saveName);
-    v.FrameRate = inPara.frameRate;
-    open(v);
-    ph = []; % empty handle means it will be created the first time showVoronoi is called
-    for i = 1:visNumber
-        ph = showVoronoi(inGeomName, 'p', FilteredVisData(:, :, i)./inPara.normalisation, h, ph);
-        title(sprintf('Image #%3d', i));
-        writeVideo(v, getframe(h)); % saving frames in an array and moving the writeVideo out of the loop only saves a few seconds - not worth it
+
+    [~, shortGeomName] = fileparts(inGeomName);
+    [~, shortVisName]  = fileparts(inVisName);
+    if visNumber==1
+        % Just a single image, write to image file
+        saveName = fullfile(inPara.saveDir, [shortGeomName, 'View', shortVisName, inPara.outImageFormat]);
+        
+        showVoronoi(inGeomName, 's', FilteredVisData(:, :, 1)./inPara.normalisation, h, [], inPara.forceRecalc, inPara.maxVoronoiDist);
+        imwrite(getframe(h).cdata, saveName);
+    else
+        % Write to output video
+        saveName = fullfile(inPara.saveDir, [shortGeomName, 'View', shortVisName, inPara.outVideoFormat]);
+        v = VideoWriter(saveName);
+        v.FrameRate = inPara.frameRate;
+        open(v);
+        ph = []; % empty handle means it will be created the first time showVoronoi is called
+        for i = 1:visNumber
+            ph = showVoronoi(inGeomName, 's', FilteredVisData(:, :, i)./inPara.normalisation, h, ph, inPara.forceRecalc&&i==1, inPara.maxVoronoiDist);
+            title(sprintf('Image #%3d', i));
+            writeVideo(v, getframe(h)); % saving frames in an array and moving the writeVideo out of the loop only saves a few seconds - not worth it
+        end
+        close(v);
     end
-    close(v);
 
 end % main
 
@@ -122,10 +139,20 @@ function outDefaultName = sub_getInputName(inType)
 end
 
 %% SUB_FINDVISUALINPUTFILES
-function outFilenames = sub_findVisualInputFiles(visName, visFormat)
+function outFilenames = sub_findVisualInputFiles(inVisName, visFormat)
     % Find all image files with an appropriate extension
-    fnMask = fullfile(rootFolder, 'be_input', 'vis', visName, ['*', visFormat]);
-    outFilenames = arrayfun(@(x) fullfile(x.folder, x.name), dir(fnMask), 'UniformOutput', false);
+
+    if isfolder(inVisName)
+        fnMask = fullfile(inVisName, ['*', visFormat]);
+        outFilenames = arrayfun(@(x) fullfile(x.folder, x.name), dir(fnMask), 'UniformOutput', false);
+    elseif isfile(inVisName)
+        outFilenames = {inVisName};
+    else
+        % old standard behaviour, look in the local stimulus library
+        visPath = fullfile(rootFolder, 'be_input', 'vis', inVisName);
+        fnMask = fullfile(visPath, ['*', visFormat]);
+        outFilenames = arrayfun(@(x) fullfile(x.folder, x.name), dir(fnMask), 'UniformOutput', false);
+    end
 end                          
 
 %% SUB_LOADVISINPUT
@@ -137,7 +164,7 @@ function ims = sub_loadVisInput(fileNames, verbose)
         im = fliplr(permute(im, [2 1 3]));                           % get indices in correct order (so azimuth is still first index)
         
         if fileNumber == 1
-            ims = zeros([size(im, 1), size(im, 2), size(im, 3),length(fileNames)]); % pre-allocate
+            ims = zeros([size(im, 1), size(im, 2), size(im, 3), length(fileNames)]); % pre-allocate
         end
         ims(:, :, :, fileNumber) = im;                                 % Concatenate new File to InputData
         if verbose
@@ -151,24 +178,31 @@ end
 %% SUB_LOADGEOM
 function outGeom = sub_loadGeom(inGeomName, inPara)
     % Subroutine 'Eye Geometry Input', loads geometrical files, which have to be in a very specific format
-    
-    outGeom.OAs = dlmread(fullfile('be_input', 'geom', inGeomName, [inGeomName, 'Points.txt'])); % load optical axes
+
+    pointsFileName = bugeyed_fileName(inGeomName, 'points');
+    anglesFileName = bugeyed_fileName(inGeomName, 'angles');
+    diamsFileName  = bugeyed_fileName(inGeomName, 'diams');
+    ioasFileName   = bugeyed_fileName(inGeomName, 'ioas');
+
+    outGeom.OAs    = dlmread(pointsFileName); % load optical axes
     
     % Load lens diameter or inter-ommatidial angle data
-    diamName = fullfile('be_input', 'geom', inGeomName, [inGeomName, 'Diams.txt']);
-    IOAName = fullfile('be_input', 'geom', inGeomName, [inGeomName, 'IOAs.txt']);
-    if exist(diamName, 'file')
-        % if lens diameter data exists, load it and use it preferentially
-        outGeom.diams = dlmread(diamName);
+    if exist(anglesFileName, 'file')
+        % if acceptanceAngle data exists, load it and use it preferentially
+        % this must be an estimated half-width (FWHM) for each receptor/facet
+        outGeom.rho   = dlmread(anglesFileName);   % acceptance angle rho, in degrees (Airy disc FWHM)
+    elseif exist(diamsFileName, 'file')
+        % lens diameter data has the next highest priority
+        outGeom.diams = dlmread(diamsFileName);
         outGeom.rho   = rad2deg(1.02 * inPara.waveLength/1000 ./ outGeom.diams);   % acceptance angle rho, in degrees (Airy disc FWHM)
-    elseif exist(IOAName, 'file')
+    elseif exist(ioasFileName, 'file')
         % otherwise, try to load inter-ommatidial angle data
-        outGeom.IOAs = dlmread(IOAName);
+        outGeom.IOAs = dlmread(ioasFileName);
         outGeom.rho   = inPara.phi2rho .* outGeom.IOAs;                         % acceptance angle rho, in degrees (Smolka2004,p.21)
     else
-        error('No lens diameter or IOA data found.');
+        error('No acceptance angle, lens diameter or IOA data found.');
     end
-    % Calculate Gaussian s.t.d.
+    % Calculate Gaussian st.d.
     outGeom.sigma = 1/(2*sqrt(2*log(2))) .* outGeom.rho; % Gaussian standard deviation sigma, in degrees
 end  
  
@@ -202,44 +236,49 @@ function outFilteredInput = sub_filterSpatially(inGeom, inIms, inPara)
         h = waitbar(0, 'Spatially filtering... (0%%)', 'Name', 'Progress');
     end
 
-    for i = 1:nRelOmms        % for each ommatidium
-        ommInd = ommInds(i);            % index in inOAs/inIOAs for this ommatidium
-        cAz    = inGeom.OAs(ommInd, 1);      % optical axis azimuth, in degrees
-        cEl    = inGeom.OAs(ommInd, 2);      % optical axis elevation, in degrees
-        corr   = 1 / cosd(cEl);         % correction factor for elevation in equirectangular projection
-
-        % cut a 6 * sig square from the image
-        lowrow      = sub_findfirstbelow(ele, max([cEl - inPara.filterCutOff * inGeom.sigma(ommInd) min(ele)]));  % first row below ele - 3 * sigma
-        highrow     = sub_findfirstabove(ele, min([cEl + inPara.filterCutOff * inGeom.sigma(ommInd) max(ele)]));  % first row above ele + 3 * sigma
-        lowcol      = sub_findfirstbelow(azi, max([cAz - inPara.filterCutOff * corr * inGeom.sigma(ommInd) min(azi)]));  % first col below azi - 3 * sigma * corr
-        highcol     = sub_findfirstabove(azi, min([cAz + inPara.filterCutOff * corr * inGeom.sigma(ommInd) max(azi)]));  % first col above azi + 3 * sigma * corr
-        rows        = min([highrow lowrow]):max([highrow lowrow]);  % numbers of all rows between highrow and lowrow
-        cols        = min([highcol lowcol]):max([highcol lowcol]);  % numbers of all rows between highrow and lowrow
-        kernelEles  = ele(rows);
-        kernelAzis  = azi(cols);
-
-        AreaX       = Area(cols, rows);
-        [KA, KE]    = ndgrid(kernelAzis, kernelEles);
-        gk          = exp( -spdist(cAz, cEl, KA, KE).^2 / (2*inGeom.sigma(ommInd).^2) ); % Gaussian kernel, up to a distance of 3 * sig (corrected for ele)
-        gk          = gk .* AreaX;                                                  % weight kernel by relative pixel areas
-        gk          = gk / sum(gk(:));                                              % normalise
-
-        for f = 1:fNum % for each frame
-            for c = 1:cNum % for each channel
-                V = inIms(cols, rows, c, f); % (Indexing this earlier is slower)
-                outFilteredInput(ommInd, c, f) = sum(sum(V.*gk));  % Filters every timestep with a Gauss filter 
-            end
-        end
+    try
+        for i = 1:nRelOmms        % for each ommatidium
+            ommInd = ommInds(i);            % index in inOAs/inIOAs for this ommatidium
+            cAz    = inGeom.OAs(ommInd, 1);      % optical axis azimuth, in degrees
+            cEl    = inGeom.OAs(ommInd, 2);      % optical axis elevation, in degrees
+            corr   = 1 / cosd(cEl);         % correction factor for elevation in equirectangular projection
     
-        if inPara.verbose
-            newPerc = round(100*i/nRelOmms);
-            if newPerc>perc
-                perc = newPerc;
-                waitbar(perc/100, h, sprintf('Spatially filtering... (%d%%, %ds remaining)', perc, round(100*toc/perc-toc)));
+            % cut a 6 * sig square from the image
+            lowrow      = sub_findfirstbelow(ele, max([cEl - inPara.filterCutOff * inGeom.sigma(ommInd) min(ele)]));  % first row below ele - 3 * sigma
+            highrow     = sub_findfirstabove(ele, min([cEl + inPara.filterCutOff * inGeom.sigma(ommInd) max(ele)]));  % first row above ele + 3 * sigma
+            lowcol      = sub_findfirstbelow(azi, max([cAz - inPara.filterCutOff * corr * inGeom.sigma(ommInd) min(azi)]));  % first col below azi - 3 * sigma * corr
+            highcol     = sub_findfirstabove(azi, min([cAz + inPara.filterCutOff * corr * inGeom.sigma(ommInd) max(azi)]));  % first col above azi + 3 * sigma * corr
+            rows        = min([highrow lowrow]):max([highrow lowrow]);  % numbers of all rows between highrow and lowrow
+            cols        = min([highcol lowcol]):max([highcol lowcol]);  % numbers of all rows between highrow and lowrow
+            kernelEles  = ele(rows);
+            kernelAzis  = azi(cols);
+    
+            AreaX       = Area(cols, rows);
+            [KA, KE]    = ndgrid(kernelAzis, kernelEles);
+            gk          = exp( -spdist(cAz, cEl, KA, KE).^2 / (2*inGeom.sigma(ommInd).^2) ); % Gaussian kernel, up to a distance of 3 * sig (corrected for ele)
+            gk          = gk .* AreaX;                                                  % weight kernel by relative pixel areas
+            gk          = gk / sum(gk(:));                                              % normalise
+    
+            for f = 1:fNum % for each frame
+                for c = 1:cNum % for each channel
+                    V = inIms(cols, rows, c, f); % (Indexing this earlier is slower)
+                    outFilteredInput(ommInd, c, f) = sum(sum(V.*gk));  % Filters every timestep with a Gauss filter 
+                end
+            end
+        
+            if inPara.verbose
+                newPerc = round(100*i/nRelOmms);
+                if newPerc>perc
+                    perc = newPerc;
+                    waitbar(perc/100, h, sprintf('Spatially filtering... (%d%%, %ds remaining)', perc, round(100*toc/perc-toc)));
+                end
             end
         end
+        if inPara.verbose, close(h); end
+    catch me
+        if inPara.verbose, close(h); end
+        rethrow(me);
     end
-    if inPara.verbose, close(h); end
 
     % subfunctions
     function pos = sub_findfirstbelow(mat, el)

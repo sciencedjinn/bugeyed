@@ -1,84 +1,84 @@
-function outVOR = makeVoronoi(inGeomName, overwrite)
-% makeVORONOI(rootFolder, inGeomName, overwrite) calculates and saves a Voronoi Diagram of the Pattern given by the name string 'inGeomName', 
-% if variable overwrite==1, all previous files will automatically be
-% overwritten; if 2, a dialog will ask the user (default)
+function outVOR = makeVoronoi(inGeomName, overwrite, maxDist)
+% MAKEVORONOI(inGeomName, overwrite) calculates and saves a Voronoi diagram of the pattern given by the name string or path 'inGeomName', 
+% if variable overwrite==1, all previous files will automatically be overwritten; if 2, a dialog will ask the user (default)
+% maxDist is the maximum (great-circle) distance, in degree, that will be searched for neighbours; lower maxDist means faster computation
 
 % used by 'makeAllVoronoi', 'showVoronoi'
 
+%% inputs
+if nargin<3, maxDist = 180; end
+if nargin<2, overwrite = 2; end
+assert(islogical(overwrite) || isnumeric(overwrite), 'Input argument overwrite must be logical or numeric');
+assert(ismember(overwrite, [0,1,2]), 'Invalid value for variable overwrite: %g', overwrite);
+
 %% paths
-vFolder = fullfile(rootFolder, 'be_input', 'voronoi', inGeomName);
-vFile = fullfile(vFolder, [inGeomName, 'Voronoi.mat']);
-gFolder = fullfile(rootFolder, 'be_input', 'geom', inGeomName);
-gFile = fullfile(gFolder, [inGeomName, 'Points.txt']);
+[vFile, vFolder] = bugeyed_fileName(inGeomName, 'voronoi');
+gFile = bugeyed_fileName(inGeomName, 'points');
 
-if nargin<2
-    overwrite=2;
-end
+%% check whether folders and files exist, and whether to overwrite them
 
-if exist(vFolder, 'file')
-    if overwrite==2
-        button = questdlg(['Voronoi diagram of ', inGeomName, ' already exists. Overwrite?'], 'File already exists','Yes','No','No');
-    elseif overwrite==1
-        button='Yes';
-    elseif overwrite==0
-        button='No';
-    else
-        error('Invalid value for variable overwrite');
-    end
-    if strcmp(button, 'No')
-        disp('** Warning: Voronoi diagram was NOT created. Process aborted by user');
-        return;
-    end
-else
+if ~isfolder(vFolder)
     mkdir(vFolder);
+else
+    if isfile(vFile)
+        switch overwrite
+            case 2
+                button = questdlg(['Voronoi diagram of ', inGeomName, ' already exists. Overwrite?'], 'File already exists', 'Yes', 'No', 'No');
+            case 1
+                button = 'Yes';
+            case 0
+                button = 'No';
+        end
+        if strcmp(button, 'No')
+            disp('** Warning: Voronoi diagram was NOT created. Process aborted by user');
+            return;
+        end
+    end
 end
 
 disp(['* Calculating Voronoi diagram ', inGeomName, ' ...']);
-Geom = dlmread(gFile);
-outVOR = voronoiPattern(Geom);
+geom   = dlmread(gFile);
+outVOR = voronoiPattern(geom, maxDist);
 
 %and save the result
 save(vFile, 'outVOR');
 fprintf('\bdone\n');
+end
 
-function VOR = voronoiPattern(inGeom)
+%% sub functions
+function vor = voronoiPattern(inGeom, maxDist)
     % VORONOIPATTERN(inGeom) calculates the voronoi cells for all points in the input array inGeom
+    assert(size(inGeom, 2)==2, 'inGeom needs to be a 2-column matrix');
     h = waitbar(0, 'Calculating Voronoi diagram...(0%)','Name', 'Progress');
     
-    VOR = cell(1, size(inGeom, 1));
+    vor = cell(1, size(inGeom, 1));
     for i = 1:size(inGeom, 1)
-        VOR{i} = findVoronoiCell(i, inGeom(:, 1), inGeom(:, 2));
+        vor{i} = findVoronoiCell(i, inGeom, maxDist);
         waitbar(i/size(inGeom, 1), h, ['Calculating Voronoi diagram....(', sprintf('%d', round(100*i/size(inGeom, 1))), '%)']);
     end
 
     close(h);
+end
 
+function outPoints = findVoronoiCell(centreIndex, allPoints, maxDist)
+    % FINDVORONOICELL(inPos, inGeom, maxDist) calculates the voronoi cell for a single point in the input array inGeom
 
-function outPoints = findVoronoiCell(inPos, inGeom1, inGeom2)
-
-    H1 = inGeom1;
-    H2 = inGeom2;
+    centrePoint = allPoints(centreIndex, :); % the point around which the voronoi cell should be found
+    sel = spdist(centrePoint(1), centrePoint(2), allPoints(:, 1), allPoints(:, 2))<=maxDist; % reduce the point set to reduce computation time
     
-    sel = spdist(H1(inPos), H2(inPos), H1, H2)<=10;
-    H1 = H1(sel);
-    H2 = H2(sel);
-    
-    % find position of p in H1 and H2
-    pos2 = findPoint(inGeom1(inPos), inGeom2(inPos), H1, H2);
-
-    % project Points into Plane
-    voroPoints = projectV(cat(2, H1, H2), [inGeom1(inPos) inGeom2(inPos)]);
-
-    [v, c] = voronoin([voroPoints(:, 1) voroPoints(:, 2)]);
-
-
-    v1 = v(:, 1);
-    v2 = v(:, 2);
-    C = c{pos2};
-    outPoints(:, 1) = v1(C);
-    outPoints(:, 2) = v2(C);
-
-    outPoints = deprojectV(outPoints, -[inGeom1(inPos) inGeom2(inPos)]);
+    if nnz(sel)<3
+        warning('Not enough points for point no. %d. (Increase beInfo.maxVoronoiDist!)', centreIndex);
+        outPoints = [NaN NaN];
+    else
+        % find position of p in reduced set
+        allInds     = 1:length(sel);
+        ind2        = find(allInds(sel)==centreIndex); % position of our target point in the new, reduced point set
+        % project points into plane
+        voroPoints  = projectV(allPoints(sel, :), centrePoint);
+        [v, c]      = voronoin(voroPoints);
+        outPoints   = v(c{ind2}, :);    %#ok<FNDSB> 
+        outPoints   = deprojectV(outPoints, -centrePoint);
+    end
 
     %% plot
     %figure(1); clf;
@@ -113,5 +113,5 @@ function outPoints = findVoronoiCell(inPos, inGeom1, inGeom2)
     %plot(outPoints(:, 1), outPoints(:, 2));
     %hold on;
     %scatter(H1(pos2), H2(pos2));
-    
+end
 
