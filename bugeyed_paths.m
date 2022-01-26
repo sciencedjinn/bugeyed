@@ -1,1 +1,1 @@
-addpath(fullfile(bugeyed_rootFolder, 'methods'))
+addpath(fullfile(bugeyed_rootFolder, 'support'))
