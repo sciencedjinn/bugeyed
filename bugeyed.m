@@ -208,15 +208,15 @@ end
  
 %% SUB_FILTERSPATIALLY
 function outFilteredInput = sub_filterSpatially(inGeom, inIms, inPara)
-    % Subroutine 'Dioptric apparatus', computes the ResultingInput-matrix with values
-    % only at the positions where ommatidia are present, the value there being
-    % the resulting intensity-input for the given ommatidium
+    % Subroutine sub_filterSpatially computes a quantum-catch/pixel-catch for each  
 
     % Parameters
     cNum        = size(inIms, 3);           % number of channels in input image
     fNum        = size(inIms, 4);           % number of timesteps/frames
-    azi         = linspace(inPara.visualField(1), inPara.visualField(2), size(inIms, 1)); % vector of azimuthal positions in input images
-    ele         = linspace(inPara.visualField(3), inPara.visualField(4), size(inIms, 2)); % vector of elevation positions in input images
+    azi         = linspace(inPara.visualField(1), inPara.visualField(2), size(inIms, 1)+1); % vector of azimuthal positions in input image pixel edges
+    azi         = azi(1:end-1)+diff(azi)/2;                                                 % vector of azimuthal positions in input image pixel centres
+    ele         = linspace(inPara.visualField(3), inPara.visualField(4), size(inIms, 2)+1); % vector of elevation positions in input image pixel edges
+    ele         = ele(1:end-1)+diff(ele)/2;                                                 % vector of azimuthal positions in input image pixel centres
     dpp_a       = median(abs(diff(azi)));   % degrees per pixel along azimuth of original images
     dpp_e       = median(abs(diff(ele)));   % degrees per pixel along elevation of original images
     Area        = (dpp_e*ones(length(azi), 1)) * (dpp_a*cosd(ele)); % The area (in degrees^2) covered by each pixel in the image
@@ -237,28 +237,13 @@ function outFilteredInput = sub_filterSpatially(inGeom, inIms, inPara)
     end
 
     try
-        for i = 1:nRelOmms        % for each ommatidium
+        for i = 1:nRelOmms        % for each relevant ommatidium
             ommInd = ommInds(i);            % index in inOAs/inIOAs for this ommatidium
-            cAz    = inGeom.OAs(ommInd, 1);      % optical axis azimuth, in degrees
-            cEl    = inGeom.OAs(ommInd, 2);      % optical axis elevation, in degrees
+            cAz    = inGeom.OAs(ommInd, 1); % optical axis azimuth, in degrees
+            cEl    = inGeom.OAs(ommInd, 2); % optical axis elevation, in degrees
             corr   = 1 / cosd(cEl);         % correction factor for elevation in equirectangular projection
-    
-            % cut a 6 * sig square from the image
-            lowrow      = sub_findfirstbelow(ele, max([cEl - inPara.filterCutOff * inGeom.sigma(ommInd) min(ele)]));  % first row below ele - 3 * sigma
-            highrow     = sub_findfirstabove(ele, min([cEl + inPara.filterCutOff * inGeom.sigma(ommInd) max(ele)]));  % first row above ele + 3 * sigma
-            lowcol      = sub_findfirstbelow(azi, max([cAz - inPara.filterCutOff * corr * inGeom.sigma(ommInd) min(azi)]));  % first col below azi - 3 * sigma * corr
-            highcol     = sub_findfirstabove(azi, min([cAz + inPara.filterCutOff * corr * inGeom.sigma(ommInd) max(azi)]));  % first col above azi + 3 * sigma * corr
-            rows        = min([highrow lowrow]):max([highrow lowrow]);  % numbers of all rows between highrow and lowrow
-            cols        = min([highcol lowcol]):max([highcol lowcol]);  % numbers of all rows between highrow and lowrow
-            kernelEles  = ele(rows);
-            kernelAzis  = azi(cols);
-    
-            AreaX       = Area(cols, rows);
-            [KA, KE]    = ndgrid(kernelAzis, kernelEles);
-            gk          = exp( -spdist(cAz, cEl, KA, KE).^2 / (2*inGeom.sigma(ommInd).^2) ); % Gaussian kernel, up to a distance of 3 * sig (corrected for ele)
-            gk          = gk .* AreaX;                                                  % weight kernel by relative pixel areas
-            gk          = gk / sum(gk(:));                                              % normalise
-    
+            [rows, cols, gk] = nested_calcGaussian;
+
             for f = 1:fNum % for each frame
                 for c = 1:cNum % for each channel
                     V = inIms(cols, rows, c, f); % (Indexing this earlier is slower)
@@ -281,6 +266,36 @@ function outFilteredInput = sub_filterSpatially(inGeom, inIms, inPara)
     end
 
     % subfunctions
+    function [rows, cols, gk] = nested_calcGaussian
+                % cut a 6 * sig square from the image
+                minAz = cAz - inPara.filterCutOff * corr * inGeom.sigma(ommInd);
+                maxAz = cAz + inPara.filterCutOff * corr * inGeom.sigma(ommInd);
+                minEl = cEl - inPara.filterCutOff * inGeom.sigma(ommInd);
+                maxEl = cEl + inPara.filterCutOff * inGeom.sigma(ommInd);
+                if maxAz<min(azi) || minAz>max(azi) || maxEl<min(ele) || minEl>max(ele)
+                    % square lies completely outside the target area, set this receptor to 0
+                    rows = 1;
+                    cols = 1;
+                    gk = 0;
+                    return;
+                end
+    
+                lowrow      = sub_findfirstbelow(ele, max([minEl min(ele)]));  % first row below ele - 3 * sigma
+                highrow     = sub_findfirstabove(ele, min([maxEl max(ele)]));  % first row above ele + 3 * sigma
+                lowcol      = sub_findfirstbelow(azi, max([minAz min(azi)]));  % first col below azi - 3 * sigma * corr
+                highcol     = sub_findfirstabove(azi, min([maxAz max(azi)]));  % first col above azi + 3 * sigma * corr
+                rows        = min([highrow lowrow]):max([highrow lowrow]);  % numbers of all rows between highrow and lowrow
+                cols        = min([highcol lowcol]):max([highcol lowcol]);  % numbers of all rows between highrow and lowrow
+                kernelEles  = ele(rows);
+                kernelAzis  = azi(cols);
+        
+                AreaX       = Area(cols, rows);
+                [KA, KE]    = ndgrid(kernelAzis, kernelEles);
+                gk          = exp( -spdist(cAz, cEl, KA, KE).^2 / (2*inGeom.sigma(ommInd).^2) ); % Gaussian kernel, up to a distance of 3 * sig (corrected for ele)
+                gk          = gk .* AreaX;                                                  % weight kernel by relative pixel areas
+                gk          = gk / sum(gk(:));                                              % normalise
+    end
+
     function pos = sub_findfirstbelow(mat, el)
         % finds the elements in mat nearest to but smaller than el
         mat(mat>el) = Inf;
