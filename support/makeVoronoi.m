@@ -74,10 +74,10 @@ function outPoints = findVoronoiCell(centreIndex, allPoints, maxDist)
         allInds     = 1:length(sel);
         ind2        = find(allInds(sel)==centreIndex); % position of our target point in the new, reduced point set
         % project points into plane
-        voroPoints  = projectV(allPoints(sel, :), centrePoint);
+        voroPoints  = sub_rotateSphereD(allPoints(sel, :), centrePoint);
         [v, c]      = voronoin(voroPoints);
         outPoints   = v(c{ind2}, :);    %#ok<FNDSB> 
-        outPoints   = deprojectV(outPoints, -centrePoint);
+        outPoints   = sub_unRotateSphereD(outPoints, -centrePoint);
     end
 
     %% plot
@@ -115,3 +115,46 @@ function outPoints = findVoronoiCell(centreIndex, allPoints, maxDist)
     %scatter(H1(pos2), H2(pos2));
 end
 
+
+function outPoints = sub_rotateSphereD(inPoints, targetView)
+    % SUB_ROTATESPHD(inPoints, inView) roates a sphere so that it's coordinate targetView is at [0 0] (useful to project points on a sphere onto a plane)
+    % targetView in spherical coordinates (degrees)
+    % inPoints and outPoints in spherical coordinates (degrees, [az el])
+    
+    [X, Y, Z] = sph2cart(deg2rad(inPoints(:, 1)), deg2rad(inPoints(:, 2)), 1);
+    RotatedPoints = sub_rotate(sub_rotate([X Y Z], [0 0 -targetView(1)]), [0 targetView(2) 0]);
+    [outPoints(:, 1), outPoints(:, 2)] = cart2sph(RotatedPoints(:, 1), RotatedPoints(:, 2), RotatedPoints(:, 3));
+    outPoints = rad2deg(outPoints);
+end
+
+function outPoints = sub_unRotateSphereD(inPoints, targetView)
+    % SUB_UNROTATESPHD(inPoints, inView) undoes the rotation of sub_rotateSphereD
+    % targetView in spherical coordinates (degrees)
+    % inPoints and outPoints in spherical coordinates (degrees, [az el])
+    
+    [X, Y, Z] = sph2cart(deg2rad(inPoints(:, 1)), deg2rad(inPoints(:, 2)), 1);
+    RotatedPoints = sub_rotate([X Y Z], [0 targetView(2) -targetView(1)]);    
+    [outPoints(:, 1), outPoints(:, 2)] = cart2sph(RotatedPoints(:, 1), RotatedPoints(:, 2), RotatedPoints(:, 3));
+    outPoints = rad2deg(outPoints);
+end
+
+function P = sub_rotate(P, R)
+    % SUB_ROTATE rotates all points in Nx3 matrix P by rotation vector R in degrees, first around x, then y, then z
+    % P = sub_rotate(P, R)
+    %
+    % P - Nx3 matrix of points [x y z]
+    % R - 1x3 vector of rotation angles, in degrees [x y z]
+
+    assert(size(P, 2)==3, 'P needs to be a Nx3 array');
+    assert(length(R)==3, 'R needs to be a 1x3 or 3x1 vector');
+    P = (sub_rotMat(R)*P')';
+end
+
+function R = sub_rotMat(r)
+    % ROTMAT creates a rotation matrix R from rotation vector r (in degrees, [x y z])
+    r  = deg2rad(r);
+    Rx = [1 0 0; 0 cos(r(1)) -sin(r(1)); 0 sin(r(1)) cos(r(1))];
+    Ry = [cos(r(2)) 0 sin(r(2)); 0 1 0; -sin(r(2)) 0 cos(r(2))];
+    Rz = [cos(r(3)) -sin(r(3)) 0; sin(r(3)) cos(r(3)) 0; 0 0 1];
+    R  = Rz*Ry*Rx;
+end
