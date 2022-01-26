@@ -1,4 +1,4 @@
-function outPh = showVoronoi(inGeomName, plotType, rgb, h, inPh, forceRecalc, maxDist)
+function outPh = showVoronoi(inGeomName, plotType, rgb, ah, inPh, forceRecalc, maxDist)
 % SHOWVORONOI (inGeomName) creates planar/spherical plot of the Voronoi diagram of 
 % the input pattern in folder 'inGeomName'
 
@@ -38,7 +38,7 @@ load(pFile, 'Fx', 'Fy', 'Id')
 %% plot
 if nargin < 4
     figure('Name', 'Voronoi diagram', 'Position', [0 0 1024 700]);
-    h = axes;
+    ah = axes;
 end
        
 if nargin>4 && ~isempty(inPh)
@@ -46,7 +46,7 @@ if nargin>4 && ~isempty(inPh)
 else
     outPh = [];
 end
-hold(h, 'off');
+hold(ah, 'off');
 
 switch plotType
     case {'p', 'pl', 'plane', 'planar'}
@@ -62,16 +62,19 @@ switch plotType
                 if nargin>4 && ~isempty(inPh)
                     set(inPh(i), 'CData', fc);
                 elseif nargin>2
-                    outPh(i) = patch(h, fx, fy, fc, 'edgecolor', 'none');
+                    outPh(i) = patch(ah, fx, fy, fc, 'edgecolor', 'none');
                 else
-                    outPh(i) = patch(h, fx, fy, 'b');
+                    outPh(i) = patch(ah, fx, fy, 'b');
                 end
-                hold(h, 'on');
+                hold(ah, 'on');
             end
         end
+        axis(ah, 'equal');
+        axis(ah, inPara.visualField);
+
     case {'sp', 's', 'sphere', 'spherical'}
-        hold(h, 'on')
-        sphere;
+        hold(ah, 'on')
+%         sphere;
         colormap([1 1 1]);
         for i = 1:length(Fx)
             fx = Fx{i}; fy = Fy{i}; fc = rgb(Id{i}, :);
@@ -79,18 +82,16 @@ switch plotType
             [x, y, z] = sph2cart(pi/180*fx, pi/180*fy, 1.01);
             patch(x, y, z, fc)
         end
-        [Angle(1), Angle(2), Angle(3)] = sph2cart(deg2rad(-15), deg2rad(30), 3);
         [x, y, z] = sph2cart(0, 0, 1);
         arrow = quiver3(x, y, z, x/2, y/2, z/2, 'k');
         for i = 1:size(arrow, 1)
             set(arrow(i), 'LineWidth', 4);
         end
 
-        axis equal;
-        %scatter3(1.01, 0, 0, 'r');
-%         set(h, 'CameraPosition', Angle);
-%         set(h, 'CameraViewAngle', 50);
-%         set(h, 'Visible', 'off');
+        axis(ah, 'equal');
+        rotate3d(ah)
+        view(ah, 60, 20);
+        set(ah, 'Visible', 'off');
         title(['Voronoi diagram of ', shortName]);
 end
 
