@@ -34,6 +34,7 @@ function bugeyed(inGeomName, inVisName, inPara)
                                                   % use a higher value to decrease output brightness (currently only works for rgb inputs)
         inPara.forceRecalc = false;
         inPara.maxVoronoiDist = 180;
+        inPara.gradientOnly = false;
     end
 
     %% load eye data
@@ -56,6 +57,11 @@ function bugeyed(inGeomName, inVisName, inPara)
         % Load
         fprintf('* Loading visual input files %d to %d out of %d...\n', a, b, visNumber);
         ims = sub_loadVisInput(visFiles(a:b), inPara.verbose);
+        
+        if inPara.gradientOnly
+            ims = repmat(mean(ims, 1), [size(ims, 1) 1 1]);
+        end
+
         fprintf('\b done.\n');
 
         if a == 1
@@ -73,9 +79,11 @@ function bugeyed(inGeomName, inVisName, inPara)
     %% plot and save
 
     % Prepare figure
-    figure(4); clf; h = axes; maxfig;
-    axis(h, 'equal');
-    axis(h, inPara.visualField);
+    figure(4); 
+    clf; 
+    h = axes; 
+    maxfig;
+
     if size(FilteredVisData, 2) == 1
         colormap gray;
     end
