@@ -21,7 +21,7 @@ function bugeyed(inGeomName, inVisName, inPara)
         inPara.ommatidialField = [-25 25 -20 20]; % Ommatidia with optical axes inside this field are calculated: [minAzi, maxAzi, minEle, maxEle] (degrees)
         inPara.frameRate = 25;                    % image sequence (and output video) frame Rate (Hz)
         inPara.imFormat = '.jpg';                 % file format of visual input files
-        inPara.saveDir = fullfile(fileparts(mfilename('fullpath')), 'output'); % output files will be saved in a sub-directory of this
+        inPara.saveDir = fullfile(bugeyed_rootFolder, 'output'); % output files will be saved in a sub-directory of this
         inPara.outImageFormat = '.jpg';           % file format of output images
         inPara.outVideoFormat = '.avi';           % file format of output videos
         inPara.phi2rho = 1;                       % assumed ratio between inter-ommatidial angle (IOA = phi) and receptor acceptance angle (AA = rho).
@@ -119,7 +119,7 @@ end % main
 %% SUB_GETINPUTNAME
 function outDefaultName = sub_getInputName(inType)
     % Poll the user with a choice of input files
-    Names = struct2cell(dir(fullfile(rootFolder, 'be_input', inType)));
+    Names = struct2cell(dir(fullfile(bugeyed_rootFolder, 'be_input', inType)));
     SelectionList = squeeze(Names(1, 3:size(Names, 2)));
     switch inType
         case 'vis'
@@ -149,7 +149,7 @@ function outFilenames = sub_findVisualInputFiles(inVisName, visFormat)
         outFilenames = {inVisName};
     else
         % old standard behaviour, look in the local stimulus library
-        visPath = fullfile(rootFolder, 'be_input', 'vis', inVisName);
+        visPath = fullfile(bugeyed_rootFolder, 'be_input', 'vis', inVisName);
         fnMask = fullfile(visPath, ['*', visFormat]);
         outFilenames = arrayfun(@(x) fullfile(x.folder, x.name), dir(fnMask), 'UniformOutput', false);
     end

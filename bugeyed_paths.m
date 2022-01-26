@@ -1,3 +1,3 @@
-    addpath(fullfile(fileparts(mfilename('fullpath')), 'methods'))
-    addpath(fullfile(fileparts(mfilename('fullpath')), 'methods', 'general'))
-    addpath(fullfile(fileparts(mfilename('fullpath')), 'methods', 'voronoi'))
+addpath(fullfile(bugeyed_rootFolder, 'methods'))
+addpath(fullfile(bugeyed_rootFolder,  'methods', 'general'))
+addpath(fullfile(bugeyed_rootFolder, 'methods', 'voronoi'))

@@ -8,7 +8,7 @@ switch lower(fileType)
     case {'points', 'angles', 'diams', 'ioas'}
         if isempty(filePath)
             % old standard behaviour, look in the local geometry library
-            filePath = fullfile(rootFolder, 'be_input', 'geom', shortGeomName);
+            filePath = fullfile(bugeyed_rootFolder, 'be_input', 'geom', shortGeomName);
         end
         switch lower(fileType)
             case 'points'
@@ -24,7 +24,7 @@ switch lower(fileType)
     case {'v', 'voronoi', 'vor', 'p', 'patch', 'patches'}
         if isempty(filePath)
             % old standard behaviour, look in the local geometry library
-            filePath = fullfile(rootFolder, 'be_input', 'voronoi', shortGeomName);
+            filePath = fullfile(bugeyed_rootFolder, 'be_input', 'voronoi', shortGeomName);
         end
         switch lower(fileType)
             case {'v', 'voronoi', 'vor'}
