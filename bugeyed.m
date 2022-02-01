@@ -10,7 +10,6 @@ function bugeyed(inGeomName, inVisName, inPara)
     %    inGeomName - can be a full path (at least two directories deep) or a pre-defined geometry name (must be found in be_input/geom)
     %    inVisName  - can be a full path (at least two directories deep) or a pre-defined stimulus name (must be found in be_input/vis)
 
-
     bugeyed_paths;
 
     %% defaults

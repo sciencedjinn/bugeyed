@@ -4,11 +4,7 @@ function outPh = showVoronoi(inGeomName, inPara, rgb, ah, inPh, forceRecalc)
 
 % uses 'makeTriang'
 
-
-
-
 if nargin<6, forceRecalc = false; end
-if nargin<2, plotType = 'plane'; end
 
 [vFile, vPath, shortName] = bugeyed_fileName(inGeomName, 'voronoi');
 pFile = bugeyed_fileName(inGeomName, 'patches');
