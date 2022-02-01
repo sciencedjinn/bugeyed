@@ -1,20 +1,21 @@
-function outPh = showVoronoi(inGeomName, plotType, rgb, ah, inPh, forceRecalc, maxDist)
+function outPh = showVoronoi(inGeomName, inPara, rgb, ah, inPh, forceRecalc)
 % SHOWVORONOI (inGeomName) creates planar/spherical plot of the Voronoi diagram of 
 % the input pattern in folder 'inGeomName'
 
 % uses 'makeTriang'
 
-if nargin<7, maxDist = 180; end
+
+
+
 if nargin<6, forceRecalc = false; end
 if nargin<2, plotType = 'plane'; end
 
 [vFile, vPath, shortName] = bugeyed_fileName(inGeomName, 'voronoi');
 pFile = bugeyed_fileName(inGeomName, 'patches');
 
-if nargin<6, forceRecalc = false; end
 
 if forceRecalc
-    makeVoronoi(inGeomName, 1, maxDist);
+    makeVoronoi(inGeomName, 1, inPara.maxVoronoiDist);
     makePatches(inGeomName);
 else
     if ~exist(vPath, 'file') || ~exist(vFile, 'file')
@@ -23,7 +24,7 @@ else
             disp('** Warning: Voronoi diagram does not exist. Plotting cancelled');
             return;
         else
-            makeVoronoi(inGeomName, 0, maxDist);
+            makeVoronoi(inGeomName, 0, inPara.maxVoronoiDist);
         end
     end
     
@@ -48,16 +49,33 @@ else
 end
 hold(ah, 'off');
 
-switch plotType
+switch inPara.plotType
     case {'p', 'pl', 'plane', 'planar'}
         for i = 1:length(Fx)
             fx = Fx{i}; fy = Fy{i}; fc = rgb(Id{i}, :);
             % delete segments that cross from one side to the other
-            sel = max(fx, [], 1) - min(fx, [], 1) > 30 | max(fy, [], 1) - min(fy, [], 1) > 30;
-            
-            if ~all(sel)
-                fx = fx(:, ~sel); fy = fy(:, ~sel); 
-                fc = fc(~sel, :);
+            crossingMode = 'shift';
+            switch crossingMode
+                case 'delete'
+                    sel = max(fx, [], 1) - min(fx, [], 1) > 30 | max(fy, [], 1) - min(fy, [], 1) > 30;
+                    fx = fx(:, ~sel); fy = fy(:, ~sel); 
+                    fc = fc(~sel, :);
+                
+                case 'shift'
+                    longAzis = max(fx, [], 1) - min(fx, [], 1) > 90;
+                    fx = [fx(:, ~longAzis) mod(fx(:, longAzis), 360) mod(fx(:, longAzis), 360)-360];
+                    fy = [fy(:, ~longAzis) fy(:, longAzis) fy(:, longAzis)];
+                    fc = [fc(~longAzis, :); fc(longAzis, :); fc(longAzis, :)];
+
+                    sel = max(fx, [], 1) - min(fx, [], 1) > inPara.voronoiEdgeLimit | max(fy, [], 1) - min(fy, [], 1) > inPara.voronoiEdgeLimit;
+                    fx = fx(:, ~sel); fy = fy(:, ~sel); 
+                    fc = fc(~sel, :);
+
+                otherwise
+
+            end
+                    
+            if ~isempty(fx)
                 fc = reshape(fc, [size(fc, 1) 1 size(fc, 2)]);
                 if nargin>4 && ~isempty(inPh)
                     set(inPh(i), 'CData', fc);
@@ -70,9 +88,9 @@ switch plotType
             end
         end
         axis(ah, 'equal');
-        axis(ah, inPara.visualField);
 
     case {'sp', 's', 'sphere', 'spherical'}
+        cla(ah)
         hold(ah, 'on')
 %         sphere;
         colormap([1 1 1]);
@@ -89,9 +107,9 @@ switch plotType
         end
 
         axis(ah, 'equal');
+        axis(ah, 'equal');
         rotate3d(ah)
-        view(ah, 60, 20);
+        view(ah, inPara.plotView(1), inPara.plotView(2));
         set(ah, 'Visible', 'off');
         title(['Voronoi diagram of ', shortName]);
 end
-

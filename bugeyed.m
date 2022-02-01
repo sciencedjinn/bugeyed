@@ -17,24 +17,7 @@ function bugeyed(inGeomName, inVisName, inPara)
     if nargin<1 || isempty(inGeomName), inGeomName = sub_getInputName('geom'); end % ask user
     if nargin<2 || isempty(inVisName),  inVisName  = sub_getInputName('vis'); end % ask user
     if nargin<3 || isempty(inPara)
-        inPara.visualField = [-20 20 -15 15];     % Camera visual field: [minAzi, maxAzi, minEle, maxEle] (degrees)
-        inPara.ommatidialField = [-25 25 -20 20]; % Ommatidia with optical axes inside this field are calculated: [minAzi, maxAzi, minEle, maxEle] (degrees)
-        inPara.frameRate = 25;                    % image sequence (and output video) frame Rate (Hz)
-        inPara.imFormat = '.jpg';                 % file format of visual input files
-        inPara.saveDir = fullfile(bugeyed_rootFolder, 'output'); % output files will be saved in a sub-directory of this
-        inPara.outImageFormat = '.jpg';           % file format of output images
-        inPara.outVideoFormat = '.avi';           % file format of output videos
-        inPara.phi2rho = 1;                       % assumed ratio between inter-ommatidial angle (IOA = phi) and receptor acceptance angle (AA = rho).
-                                                  % Influences acceptance angles ONLY if calculated from inter-ommatidial angles.
-        inPara.waveLength = 450;                  % assumed wavelength of processed light. Influences acceptance angles ONLY if calculated from facet diameter.
-        inPara.bufferSize = 100;                  % number of images to buffer before filtering. Larger number excutes faster, but requires more RAM.
-        inPara.filterCutOff = 3;                  % filter kernels will be cut off after 'filterCutOff' standard deviations (default 3 to include 99.7% of data)
-        inPara.verbose = true;                    % toggle the display of waitbars during loading
-        inPara.normalisation = 2^16-1;               % normalise the output video to this maximum (255 for normal jpgs)
-                                                  % use a higher value to decrease output brightness (currently only works for rgb inputs)
-        inPara.forceRecalc = false;
-        inPara.maxVoronoiDist = 180;
-        inPara.gradientOnly = false;
+        inPara = bugeyed_defaultPara;
     end
 
     %% load eye data
@@ -44,36 +27,62 @@ function bugeyed(inGeomName, inVisName, inPara)
     geom = sub_loadGeom(inGeomName, inPara); % load optical axes and acceptance angles
     fprintf('\bdone.\n');
 
-    %% load and filter visual input files
-    visFiles = sub_findVisualInputFiles(inVisName, inPara.imFormat);  % all image file names
-    visNumber = length(visFiles);                                     % total number of image files
-    if visNumber==0, error('No files of %s type found in folder %s', inPara.imFormat, inVisName); end
-
-    a = 1;
-    tic
-    while a <= visNumber
-        b = min([a + inPara.bufferSize - 1, visNumber]);
-
-        % Load
-        fprintf('* Loading visual input files %d to %d out of %d...\n', a, b, visNumber);
-        ims = sub_loadVisInput(visFiles(a:b), inPara.verbose);
+    if inPara.stimulusMode
+        %% load and filter visual input files
+        visFiles = sub_findVisualInputFiles(inVisName, inPara.imFormat);  % all image file names
+        visNumber = length(visFiles);                                     % total number of image files
+        if visNumber==0, error('No files of %s type found in folder %s', inPara.imFormat, inVisName); end
+        if visNumber>1, error('Stimulus mode only supports a single image!'); end
         
+        tic
+        im = sub_loadVisInput(visFiles, inPara.verbose);
         if inPara.gradientOnly
-            ims = repmat(mean(ims, 1), [size(ims, 1) 1 1]);
+            im = repmat(mean(im, 1), [size(im, 1) 1]);
         end
 
-        fprintf('\b done.\n');
-
-        if a == 1
-            FilteredVisData = nan(size(geom.OAs, 1), size(ims, 3), length(visFiles)); % pre-allocateonce you know the channel number
+        t = 0:1/inPara.frameRate:inPara.stimulus.duration;
+        ims = nan(size(im, 1), size(im, 2), 3, length(t)); % pre-allocate
+        for i = 1:length(t)
+            ims(:, :, :, i) = bugeyed_overlayStimulus(im, inPara.visualField, inPara.stimulus, t(i));
         end
 
         % Filter
-        fprintf('* Spatially filtering input files %d to %d out of %d...\n', a, b, visNumber);
-        FilteredVisData(:, :, a:b) = sub_filterSpatially(geom, ims, inPara);
+        fprintf('* Spatially filtering input files...\n');
+        FilteredVisData = sub_filterSpatially(geom, ims, inPara);
         fprintf('\b done.\n');
-
-        a = b + 1;
+        visNumber = length(t);
+    else
+        %% load and filter visual input files
+        visFiles = sub_findVisualInputFiles(inVisName, inPara.imFormat);  % all image file names
+        visNumber = length(visFiles);                                     % total number of image files
+        if visNumber==0, error('No files of %s type found in folder %s', inPara.imFormat, inVisName); end
+    
+        a = 1;
+        tic
+        while a <= visNumber
+            b = min([a + inPara.bufferSize - 1, visNumber]);
+    
+            % Load
+            fprintf('* Loading visual input files %d to %d out of %d...\n', a, b, visNumber);
+            ims = sub_loadVisInput(visFiles(a:b), inPara.verbose);
+            
+            if inPara.gradientOnly
+                ims = repmat(mean(ims, 1), [size(ims, 1) 1 1]);
+            end
+    
+            fprintf('\b done.\n');
+    
+            if a == 1
+                FilteredVisData = nan(size(geom.OAs, 1), size(ims, 3), length(visFiles)); % pre-allocateonce you know the channel number
+            end
+    
+            % Filter
+            fprintf('* Spatially filtering input files %d to %d out of %d...\n', a, b, visNumber);
+            FilteredVisData(:, :, a:b) = sub_filterSpatially(geom, ims, inPara);
+            fprintf('\b done.\n');
+    
+            a = b + 1;
+        end
     end
 
     %% plot and save
@@ -98,18 +107,22 @@ function bugeyed(inGeomName, inVisName, inPara)
         % Just a single image, write to image file
         saveName = fullfile(inPara.saveDir, [shortGeomName, 'View', shortVisName, inPara.outImageFormat]);
         
-        showVoronoi(inGeomName, 's', FilteredVisData(:, :, 1)./inPara.normalisation, h, [], inPara.forceRecalc, inPara.maxVoronoiDist);
+        showVoronoi(inGeomName, inPara, FilteredVisData(:, :, 1)./inPara.normalisation, h, [], inPara.forceRecalc);
+        if inPara.plotType=='p', axis(h, inPara.visualField); end
         imwrite(getframe(h).cdata, saveName);
     else
         % Write to output video
         saveName = fullfile(inPara.saveDir, [shortGeomName, 'View', shortVisName, inPara.outVideoFormat]);
-        v = VideoWriter(saveName);
+        v = VideoWriter(saveName, 'MPEG-4');
         v.FrameRate = inPara.frameRate;
         open(v);
         ph = []; % empty handle means it will be created the first time showVoronoi is called
         for i = 1:visNumber
-            ph = showVoronoi(inGeomName, 's', FilteredVisData(:, :, i)./inPara.normalisation, h, ph, inPara.forceRecalc&&i==1, inPara.maxVoronoiDist);
+            ph = showVoronoi(inGeomName, inPara, FilteredVisData(:, :, i)./inPara.normalisation, h, ph, inPara.forceRecalc&&i==1);
             title(sprintf('Image #%3d', i));
+            drawnow;
+            axis(h, 'equal')
+            if inPara.plotType=='p', axis(h, inPara.visualField); end
             writeVideo(v, getframe(h)); % saving frames in an array and moving the writeVideo out of the loop only saves a few seconds - not worth it
         end
         close(v);
